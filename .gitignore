@@ -3,3 +3,4 @@ debug
 **/dist
 **/.DS_Store
 **/Cargo.lock
+.test
