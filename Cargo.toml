@@ -1,13 +1,14 @@
 
 [package]
 name = "tee_morphosis"
-version = "0.0.1"
+version = "1.0.0"
 edition = "2024"
 authors = ["TOwInOK <60252419+TOwInOK@users.noreply.github.com>"]
-repository = "change_me"
+repository = "https://github.com/PulseClient-ddnet/tee-morphosis"
 license = "MIT"                                                   #"Apache-2.0"
 description = "Lib for parsing, splitting and building tee"
 keywords = ["ddnet", "parsing", "tee", "skin", "uv"]
+readme = "README.md"
 
 [dependencies]
 bytes = "1.10.1"
