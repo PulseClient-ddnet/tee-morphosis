@@ -57,7 +57,9 @@ pub mod uv;
 use std::io::Cursor;
 
 use bytes::Bytes;
-use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, RgbaImage, imageops};
+use image::{
+    DynamicImage, GenericImageView, ImageFormat, ImageReader, Rgb, Rgba, RgbaImage, imageops,
+};
 use tracing::{debug, error, info, instrument}; // Added `Instrument`
 
 use crate::{
@@ -335,6 +337,31 @@ impl Tee {
         info!(output_size = buf.len(), "Successfully composed Tee image.");
         Ok(Bytes::from(buf))
     }
+
+    pub fn body_hsv_rotate(
+        &mut self,
+        hsv: (f32, f32, f32),
+    ) {
+        apply_ddnet_color(&mut self.body.value, hsv);
+    }
+    pub fn body_shadow_hsv_rotate(
+        &mut self,
+        hsv: (f32, f32, f32),
+    ) {
+        apply_ddnet_color(&mut self.body.shadow, hsv);
+    }
+    pub fn feet_hsv_rotate(
+        &mut self,
+        hsv: (f32, f32, f32),
+    ) {
+        apply_ddnet_color(&mut self.feet.value, hsv);
+    }
+    pub fn feet_shadow_hsv_rotate(
+        &mut self,
+        hsv: (f32, f32, f32),
+    ) {
+        apply_ddnet_color(&mut self.feet.shadow, hsv);
+    }
 }
 
 /// Extracts a rectangular part from a source image.
@@ -373,4 +400,43 @@ fn extract_part(
 
     let cropped_image = img.view(part.x, part.y, part.w, part.h).to_image();
     Ok(cropped_image)
+}
+
+// TODO: add tests & doc
+pub fn ddnet_to_hsv(v: u32) -> (f32, f32, f32) {
+    let h = ((v >> 16) & 0xFF) as f32 / 255.0;
+    let s = ((v >> 8) & 0xFF) as f32 / 255.0;
+    let v = (v & 0xFF) as f32 / 255.0;
+    (h, s, v)
+}
+
+pub fn apply_ddnet_color(
+    img: &mut RgbaImage,
+    (h, s, v): (f32, f32, f32),
+) {
+    for pixel in img.pixels_mut() {
+        let a = pixel[3]; // alpha
+
+        // HSV -> RGB
+        let c = v * s;
+        let hh = h * 6.0;
+        let x = c * (1.0 - ((hh % 2.0) - 1.0).abs());
+        let m = v - c;
+
+        let (r1, g1, b1) = match hh.floor() as u32 {
+            0 => (c, x, 0.0),
+            1 => (x, c, 0.0),
+            2 => (0.0, c, x),
+            3 => (0.0, x, c),
+            4 => (x, 0.0, c),
+            _ => (c, 0.0, x),
+        };
+
+        *pixel = Rgba([
+            ((r1 + m) * 255.0).clamp(0.0, 255.0) as u8,
+            ((g1 + m) * 255.0).clamp(0.0, 255.0) as u8,
+            ((b1 + m) * 255.0).clamp(0.0, 255.0) as u8,
+            a,
+        ]);
+    }
 }
