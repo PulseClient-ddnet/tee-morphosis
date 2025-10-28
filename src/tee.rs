@@ -316,7 +316,7 @@ impl Tee {
         compose(&self.body.value, skin.body); // body
         compose(&self.feet.value, skin.front_feet); // front feet
         let eye = self.get_eye(eye_type);
-        compose(&eye, skin.first_eyes); // first eye
+        compose(eye, skin.first_eyes); // first eye
         compose(&imageops::flip_horizontal(eye), skin.second_eyes); // second eye (flipped)
 
         let mut buf = Vec::new();
