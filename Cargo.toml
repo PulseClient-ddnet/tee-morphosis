@@ -18,10 +18,12 @@ tracing = "^0.1"
 thiserror = "^2"
 image = { version = "0.25.8", default-features = false, features = ["png", "webp"] }
 
+[dev-dependencies]
+tee_morphosis = {path = ".", features = ["net"]}
+
 
 [features]
 default = []
-full = ["net"]
 net = ["tokio", "reqwest"]
 
 [package.metadata.docs.rs]

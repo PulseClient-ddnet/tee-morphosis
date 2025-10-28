@@ -68,17 +68,22 @@ use crate::{
     },
 };
 
+// TODO: add hue rotation or bland for body, feet
 /// Represents a parsed Tee character, containing all its visual components.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tee {
+    // TODO: need to be hue
     pub body: WithShadow,
+    // TODO: need to be hue
     pub feet: WithShadow,
     /// An array of eye images, ordered as follows:
+    ///
     /// [Normal, Angry, Pain, Happy, Empty, Surprise]
     pub eye: [EyeTypeData; 6],
     pub hand: WithShadow,
 }
 
+// TODO: value and shadow can be hue rotated
 /// A struct holding a part of the Tee and its corresponding shadow.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WithShadow {
@@ -239,7 +244,7 @@ impl Tee {
         info!(bytes_len = bytes.len(), "Successfully fetched image data.");
 
         // Use `instrument` to create a new span for the `Tee::new` call
-        Self::new(bytes, uv, format)
+        tokio::task::block_in_place(|| Self::new(bytes, uv, format))
     }
 
     /// Retrieves the image for a specific eye type.
