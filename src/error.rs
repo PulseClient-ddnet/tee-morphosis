@@ -1,3 +1,5 @@
+//! # Error Module
+
 pub type Result<T> = std::result::Result<T, TeeError>;
 
 #[derive(thiserror::Error, Debug)]
@@ -12,6 +14,10 @@ pub enum TeeError {
     #[error("Req does not contains any img content type: {0}")]
     ReqWithOutContentType(String),
 
+    // Добавить в src/error.rs
+    #[error("Invalid builder configuration. Provide either data+format or url")]
+    InvalidBuilderConfiguration,
+
     #[error("Got error then work with image: {0}")]
     Image(#[from] image::ImageError),
 
@@ -19,7 +25,7 @@ pub enum TeeError {
         "The requested part {part:?} is outside the image bounds (width: {width}, height: {height})"
     )]
     OutOfBounds {
-        part: crate::tee::uv::Part,
+        part: crate::tee::uv::UVPart,
         width: u32,
         height: u32,
     },

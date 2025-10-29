@@ -1,3 +1,7 @@
+//! # Skin module
+
+use crate::tee::uv::ContentSize;
+
 pub type Postion = (i64, i64);
 pub type Size = (u32, u32);
 pub type Scale = f32;
@@ -12,7 +16,7 @@ pub struct Skin {
     pub first_eyes: SkinPS,
     pub second_eyes: SkinPS,
 
-    pub container: (u32, u32),
+    pub container: ContentSize,
 }
 
 // https://github.com/ddnet/ddnet-discordbot/blob/5c37e4bcc2e97347de30d48a970c75cec3ecddb3/cogs/skindb.py#L179

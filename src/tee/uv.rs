@@ -1,3 +1,5 @@
+//! # UV mapping module
+
 pub type ContentSize = (u32, u32);
 
 pub const BODY_SIZE: ContentSize = (96, 96);
@@ -6,7 +8,7 @@ pub const EYE_SIZE: ContentSize = (32, 32);
 pub const HAND_SIZE: ContentSize = (32, 32);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Part {
+pub struct UVPart {
     pub x: u32,
     pub y: u32,
     pub w: u32,
@@ -16,14 +18,14 @@ pub struct Part {
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Mappings for parsing
 pub struct UV {
-    pub body: Part,
-    pub body_shadow: Part,
-    pub feet: Part,
-    pub feet_shadow: Part,
-    pub hand: Part,
-    pub hand_shadow: Part,
+    pub body: UVPart,
+    pub body_shadow: UVPart,
+    pub feet: UVPart,
+    pub feet_shadow: UVPart,
+    pub hand: UVPart,
+    pub hand_shadow: UVPart,
     /// [Normal, Angry, Pain, Happy, Empty, Surprise]
-    pub eyes: [Part; 6],
+    pub eyes: [UVPart; 6],
     pub container: ContentSize,
 }
 
@@ -39,74 +41,74 @@ pub const TEE_UV_LAYOUT: UV = {
 
     UV {
         container: (256, 128),
-        body: Part {
+        body: UVPart {
             x: 0,
             y: 0,
             w: BODY_SIZE.0,
             h: BODY_SIZE.1,
         },
-        body_shadow: Part {
+        body_shadow: UVPart {
             x: BODY_END_X,
             y: 0,
             w: BODY_SIZE.0,
             h: BODY_SIZE.1,
         },
-        feet: Part {
+        feet: UVPart {
             x: HANDS_AND_FEET_START_X,
             y: FEET_START_Y,
             w: FEET_SIZE.0,
             h: FEET_SIZE.1,
         },
-        feet_shadow: Part {
+        feet_shadow: UVPart {
             x: HANDS_AND_FEET_START_X,
             y: FEET_SHADOW_START_Y,
             w: FEET_SIZE.0,
             h: FEET_SIZE.1,
         },
-        hand: Part {
+        hand: UVPart {
             x: HANDS_AND_FEET_START_X,
             y: 0,
             w: HAND_SIZE.0,
             h: HAND_SIZE.1,
         },
-        hand_shadow: Part {
+        hand_shadow: UVPart {
             x: HAND_SHADOW_START_X,
             y: 0,
             w: HAND_SIZE.0,
             h: HAND_SIZE.1,
         },
         eyes: [
-            Part {
+            UVPart {
                 x: EYES_START_X,
                 y: EYES_START_Y,
                 w: EYE_SIZE.0,
                 h: EYE_SIZE.1,
             }, // Normal
-            Part {
+            UVPart {
                 x: EYES_START_X + EYE_SIZE.0,
                 y: EYES_START_Y,
                 w: EYE_SIZE.0,
                 h: EYE_SIZE.1,
             }, // Angry
-            Part {
+            UVPart {
                 x: EYES_START_X + EYE_SIZE.0 * 2,
                 y: EYES_START_Y,
                 w: EYE_SIZE.0,
                 h: EYE_SIZE.1,
             }, // Pain
-            Part {
+            UVPart {
                 x: EYES_START_X + EYE_SIZE.0 * 3,
                 y: EYES_START_Y,
                 w: EYE_SIZE.0,
                 h: EYE_SIZE.1,
             }, // Happy
-            Part {
+            UVPart {
                 x: EYES_START_X + EYE_SIZE.0 * 4,
                 y: EYES_START_Y,
                 w: EYE_SIZE.0,
                 h: EYE_SIZE.1,
             }, // Empty
-            Part {
+            UVPart {
                 x: EYES_START_X + EYE_SIZE.0 * 5,
                 y: EYES_START_Y,
                 w: EYE_SIZE.0,

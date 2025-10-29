@@ -33,7 +33,7 @@
 //!
 //! ## Example
 //!
-//! ```rust,ignore
+//! ```rust
 //! use tee_morphosis::tee::{Tee, uv::{UV, TEE_UV_LAYOUT}, skin::{Skin, TEE_SKIN_LAYOUT}, EyeType};
 //! use tee_morphosis::error::Result;
 //! use image::ImageFormat;
@@ -51,82 +51,47 @@
 //! // `final_image_bytes` now contains the complete character image.
 //! ```
 
+pub mod builder;
+pub mod compose;
+pub mod parts;
 pub mod skin;
 pub mod uv;
 
-use std::io::Cursor;
+use std::{collections::HashMap, io::Cursor};
 
 use bytes::Bytes;
 use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, Rgba, RgbaImage, imageops};
-use tracing::{debug, error, info, instrument}; // Added `Instrument`
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::{
     error::{Result, TeeError},
     tee::{
+        compose::ComposeOptions,
+        parts::{EyeType, EyeTypeData, TeePart, WithShadow},
         skin::{Skin, SkinPS},
-        uv::{Part, TEE_UV_LAYOUT, UV},
+        uv::{TEE_UV_LAYOUT, UV, UVPart},
     },
 };
 
-// TODO: add hue rotation or bland for body, feet
 /// Represents a parsed Tee character, containing all its visual components.
+///
+/// The Tee struct holds all the necessary parts to render a character, including
+/// body parts, feet, hands, and various eye states. Each part is stored separately
+/// from its shadow to allow for independent manipulation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tee {
-    // TODO: need to be hue
+    /// The body part of the character, including both the main body and its shadow
     pub body: WithShadow,
-    // TODO: need to be hue
+    /// The feet parts of the character, including both the main feet and their shadow
     pub feet: WithShadow,
     /// An array of eye images, ordered as follows:
     ///
     /// [Normal, Angry, Pain, Happy, Empty, Surprise]
     pub eye: [EyeTypeData; 6],
+    /// The hand parts of the character, including both the main hand and its shadow
     pub hand: WithShadow,
-
+    /// The UV mapping used to extract parts from the source image
     pub used_uv: UV,
-}
-
-// TODO: value and shadow can be hue rotated
-/// A struct holding a part of the Tee and its corresponding shadow.
-#[derive(Debug, Clone, PartialEq)]
-pub struct WithShadow {
-    pub value: RgbaImage,
-    pub shadow: RgbaImage,
-}
-
-/// An enum representing the different states of the Tee's eyes, each holding its corresponding image.
-#[derive(Debug, Clone, PartialEq)]
-pub enum EyeTypeData {
-    Normal(RgbaImage),
-    Angry(RgbaImage),
-    Pain(RgbaImage),
-    Happy(RgbaImage),
-    Empty(RgbaImage),
-    Surprise(RgbaImage),
-}
-
-/// An enum to specify the desired eye state for the Tee.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum EyeType {
-    Normal,
-    Angry,
-    Pain,
-    Happy,
-    Empty,
-    Surprise,
-}
-
-impl EyeType {
-    /// Returns the array index corresponding to this eye type.
-    pub const fn index(&self) -> usize {
-        match self {
-            EyeType::Normal => 0,
-            EyeType::Angry => 1,
-            EyeType::Pain => 2,
-            EyeType::Happy => 3,
-            EyeType::Empty => 4,
-            EyeType::Surprise => 5,
-        }
-    }
 }
 
 impl Tee {
@@ -140,69 +105,26 @@ impl Tee {
     /// # Returns
     ///
     /// A `Result` which is `Ok(Tee)` on successful parsing, or `Err(TeeError)` on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::Tee;
+    /// use image::ImageFormat;
+    ///
+    /// let image_data = std::fs::read("tee_parts.png")?;
+    /// let tee = Tee::new(image_data.into(), ImageFormat::Png)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[instrument(level = "info", skip(data), fields(format = ?format))]
     pub fn new(
         data: Bytes,
         format: ImageFormat,
     ) -> Result<Self> {
-        let uv = TEE_UV_LAYOUT;
-        let mut img = ImageReader::new(Cursor::new(data));
-        img.set_format(format);
-        let img = img.decode()?;
-        let img_dimensions = img.dimensions();
-
-        debug!(image_dimensions = ?img_dimensions, "Image decoded successfully.");
-
-        if img_dimensions != uv.container {
-            error!(
-                expected = ?uv.container,
-                found = ?img_dimensions,
-                "Invalid image dimensions."
-            );
-            return Err(TeeError::InvalidDimensions {
-                expected: uv.container,
-                found: img_dimensions,
-            });
-        }
-
-        debug!("Extracting body parts.");
-        let body = WithShadow {
-            value: extract_part(&img, uv.body)?,
-            shadow: extract_part(&img, uv.body_shadow)?,
-        };
-
-        debug!("Extracting feet parts.");
-        let feet = WithShadow {
-            value: extract_part(&img, uv.feet)?,
-            shadow: extract_part(&img, uv.feet_shadow)?,
-        };
-
-        debug!("Extracting hand parts.");
-        let hand = WithShadow {
-            value: extract_part(&img, uv.hand)?,
-            shadow: extract_part(&img, uv.hand_shadow)?,
-        };
-
-        debug!("Extracting eye parts.");
-        let eye = [
-            EyeTypeData::Normal(extract_part(&img, uv.eyes[0])?),
-            EyeTypeData::Angry(extract_part(&img, uv.eyes[1])?),
-            EyeTypeData::Pain(extract_part(&img, uv.eyes[2])?),
-            EyeTypeData::Happy(extract_part(&img, uv.eyes[3])?),
-            EyeTypeData::Empty(extract_part(&img, uv.eyes[4])?),
-            EyeTypeData::Surprise(extract_part(&img, uv.eyes[5])?),
-        ];
-
-        Ok(Self {
-            body,
-            feet,
-            eye,
-            hand,
-            used_uv: uv,
-        })
+        Self::new_with_uv(data, TEE_UV_LAYOUT, format)
     }
 
-    /// Parses a `Tee` struct from raw image data.
+    /// Parses a `Tee` struct from raw image data with a custom UV layout.
     ///
     /// # Arguments
     ///
@@ -213,59 +135,39 @@ impl Tee {
     /// # Returns
     ///
     /// A `Result` which is `Ok(Tee)` on successful parsing, or `Err(TeeError)` on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, uv::UV};
+    /// use image::ImageFormat;
+    ///
+    /// let image_data = std::fs::read("custom_tee_parts.png")?;
+    /// let custom_uv = UV { /* custom layout */ };
+    /// let tee = Tee::new_with_uv(image_data.into(), custom_uv, ImageFormat::Png)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[instrument(level = "info", skip(data, uv), fields(format = ?format))]
     pub fn new_with_uv(
         data: Bytes,
         uv: UV,
         format: ImageFormat,
     ) -> Result<Self> {
-        let mut img = ImageReader::new(Cursor::new(data));
-        img.set_format(format);
-        let img = img.decode()?;
+        trace!("Starting to decode image with format: {:?}", format);
+        let img = decode_image(data, format)?;
         let img_dimensions = img.dimensions();
 
         debug!(image_dimensions = ?img_dimensions, "Image decoded successfully.");
 
-        if img_dimensions != uv.container {
-            error!(
-                expected = ?uv.container,
-                found = ?img_dimensions,
-                "Invalid image dimensions."
-            );
-            return Err(TeeError::InvalidDimensions {
-                expected: uv.container,
-                found: img_dimensions,
-            });
-        }
+        validate_image_dimensions(img_dimensions, uv.container)?;
 
-        debug!("Extracting body parts.");
-        let body = WithShadow {
-            value: extract_part(&img, uv.body)?,
-            shadow: extract_part(&img, uv.body_shadow)?,
-        };
+        debug!("Extracting all parts from the image.");
+        let body = extract_with_shadow(&img, uv.body, uv.body_shadow)?;
+        let feet = extract_with_shadow(&img, uv.feet, uv.feet_shadow)?;
+        let hand = extract_with_shadow(&img, uv.hand, uv.hand_shadow)?;
+        let eye = extract_all_eyes(&img, &uv.eyes)?;
 
-        debug!("Extracting feet parts.");
-        let feet = WithShadow {
-            value: extract_part(&img, uv.feet)?,
-            shadow: extract_part(&img, uv.feet_shadow)?,
-        };
-
-        debug!("Extracting hand parts.");
-        let hand = WithShadow {
-            value: extract_part(&img, uv.hand)?,
-            shadow: extract_part(&img, uv.hand_shadow)?,
-        };
-
-        debug!("Extracting eye parts.");
-        let eye = [
-            EyeTypeData::Normal(extract_part(&img, uv.eyes[0])?),
-            EyeTypeData::Angry(extract_part(&img, uv.eyes[1])?),
-            EyeTypeData::Pain(extract_part(&img, uv.eyes[2])?),
-            EyeTypeData::Happy(extract_part(&img, uv.eyes[3])?),
-            EyeTypeData::Empty(extract_part(&img, uv.eyes[4])?),
-            EyeTypeData::Surprise(extract_part(&img, uv.eyes[5])?),
-        ];
-
+        info!("Successfully parsed all Tee parts from the image.");
         Ok(Self {
             body,
             feet,
@@ -277,7 +179,7 @@ impl Tee {
 
     #[cfg(feature = "net")]
     #[cfg_attr(docsrs, doc(cfg(feature = "net")))]
-    /// Asynchronously fetches a [Tee] skin from a URL and parses it.
+    /// Asynchronously fetches a [Tee] skin from a URL and parses it with a custom UV layout.
     /// The image format is determined from the `Content-Type` header of the response.
     ///
     /// # Arguments
@@ -288,37 +190,33 @@ impl Tee {
     /// # Returns
     ///
     /// A [Result] which is Ok([Tee]) on successful fetching and parsing, or Err([TeeError]) on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, uv::UV};
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let custom_uv = UV { /* custom layout */ };
+    ///     let tee = Tee::new_from_url_with_uv("https://example.com/tee.png", custom_uv).await?;
+    ///     Ok(())
+    /// }
+    /// ```
     #[instrument(level = "info", skip(uv), fields(url = %url))]
     pub async fn new_from_url_with_uv(
         url: &str,
         uv: UV,
     ) -> Result<Self> {
-        let response = reqwest::get(url).await.map_err(|e| {
-            error!(error = %e, "Failed to send request.");
-            TeeError::Reqwest(e)
-        })?;
+        trace!("Fetching image from URL: {}", url);
+        let (bytes, format) = fetch_image_from_url(url).await?;
 
-        // Determine format from Content-Type header
-        let format = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|mime| ImageFormat::from_mime_type(mime))
-            .ok_or_else(|| {
-                error!("'Content-Type' header is missing or invalid.");
-                TeeError::ReqWithOutContentType(url.to_string())
-            })?;
+        info!(
+            "Successfully fetched image data, size: {} bytes",
+            bytes.len()
+        );
 
-        info!(determined_format = ?format, "Image format determined from response header.");
-
-        let bytes = response.bytes().await.map_err(|e| {
-            error!(error = %e, "Failed to read bytes from response.");
-            TeeError::Reqwest(e)
-        })?;
-
-        info!(bytes_len = bytes.len(), "Successfully fetched image data.");
-
-        // Use `instrument` to create a new span for the `Tee::new` call
+        // Use `instrument` to create a new span for the `Tee::new_with_uv` call
         tokio::task::spawn_blocking(move || Self::new_with_uv(bytes, uv, format))
             .await
             .map_err(TeeError::Join)?
@@ -326,7 +224,7 @@ impl Tee {
 
     #[cfg(feature = "net")]
     #[cfg_attr(docsrs, doc(cfg(feature = "net")))]
-    /// Asynchronously fetches a [Tee] skin from a URL and parses it.
+    /// Asynchronously fetches a [Tee] skin from a URL and parses it with the default UV layout.
     /// The image format is determined from the `Content-Type` header of the response.
     ///
     /// # Arguments
@@ -336,32 +234,27 @@ impl Tee {
     /// # Returns
     ///
     /// A [Result] which is Ok([Tee]) on successful fetching and parsing, or Err([TeeError]) on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::Tee;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let tee = Tee::new_from_url("https://example.com/tee.png").await?;
+    ///     Ok(())
+    /// }
+    /// ```
     #[instrument(level = "info", fields(url = %url))]
     pub async fn new_from_url(url: &str) -> Result<Self> {
-        let response = reqwest::get(url).await.map_err(|e| {
-            error!(error = %e, "Failed to send request.");
-            TeeError::Reqwest(e)
-        })?;
+        trace!("Fetching image from URL: {}", url);
+        let (bytes, format) = fetch_image_from_url(url).await?;
 
-        // Determine format from Content-Type header
-        let format = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|mime| ImageFormat::from_mime_type(mime))
-            .ok_or_else(|| {
-                error!("'Content-Type' header is missing or invalid.");
-                TeeError::ReqWithOutContentType(url.to_string())
-            })?;
-
-        info!(determined_format = ?format, "Image format determined from response header.");
-
-        let bytes = response.bytes().await.map_err(|e| {
-            error!(error = %e, "Failed to read bytes from response.");
-            TeeError::Reqwest(e)
-        })?;
-
-        info!(bytes_len = bytes.len(), "Successfully fetched image data.");
+        info!(
+            "Successfully fetched image data, size: {} bytes",
+            bytes.len()
+        );
 
         tokio::task::spawn_blocking(move || Self::new(bytes, format))
             .await
@@ -379,6 +272,16 @@ impl Tee {
     /// A reference to the `RgbaImage` corresponding to the requested eye type.
     /// This function will panic if the internal state is inconsistent, which is
     /// prevented by the construction logic in `Tee::new`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, EyeType};
+    ///
+    /// let tee = Tee::new(/* ... */)?;
+    /// let happy_eye = tee.get_eye(EyeType::Happy);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[instrument(level = "debug", skip(self), fields(eye_type = ?r#type))]
     pub fn get_eye(
         &self,
@@ -413,6 +316,18 @@ impl Tee {
     ///
     /// A `Result` which is `Ok(Bytes)` containing the final image data on success,
     /// or `Err(TeeError)` on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, EyeType, skin::TEE_SKIN_LAYOUT};
+    /// use image::ImageFormat;
+    ///
+    /// let tee = Tee::new(/* ... */)?;
+    /// let result = tee.compose(TEE_SKIN_LAYOUT, EyeType::Happy, ImageFormat::Png)?;
+    /// std::fs::write("output.png", result)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[instrument(level = "info", skip(self, skin), fields(eye_type = ?eye_type, img_format = ?img_format, skin_container = ?skin.container))]
     pub fn compose(
         &self,
@@ -420,8 +335,11 @@ impl Tee {
         eye_type: EyeType,
         img_format: ImageFormat,
     ) -> Result<Bytes> {
+        trace!("Starting composition process");
         let mut canvas = RgbaImage::new(skin.container.0, skin.container.1);
-        let mut compose = |layer: &RgbaImage, ((x, y), scale): SkinPS, uv_part: Part| {
+
+        // Define the composition function
+        let mut compose = |layer: &RgbaImage, ((x, y), scale): SkinPS, uv_part: UVPart| {
             debug!(
                 "Composing layer at position ({}, {}) with size ({}, {}) and scale {}",
                 x, y, uv_part.w, uv_part.h, scale
@@ -436,19 +354,7 @@ impl Tee {
         };
 
         // Layering order is important for correct appearance
-        compose(&self.body.shadow, skin.body, self.used_uv.body_shadow); // body shadow
-        compose(&self.feet.shadow, skin.feet_back, self.used_uv.feet_shadow); // back feet shadow
-        compose(&self.feet.shadow, skin.feet, self.used_uv.feet_shadow); // front feet shadow
-        compose(&self.feet.value, skin.feet_back, self.used_uv.feet); // back feet
-        compose(&self.body.value, skin.body, self.used_uv.body); // body
-        let eye = self.get_eye(eye_type);
-        compose(eye, skin.first_eyes, self.used_uv.eyes[0]); // first eye
-        compose(
-            &imageops::flip_horizontal(eye),
-            skin.second_eyes,
-            self.used_uv.eyes[0],
-        ); // second eye (flipped)
-        compose(&self.feet.value, skin.feet, self.used_uv.feet); // front feet
+        self.compose_layers(&mut compose, &skin, eye_type);
 
         let mut buf = Vec::new();
         let mut cursor = Cursor::new(&mut buf);
@@ -462,29 +368,256 @@ impl Tee {
         Ok(Bytes::from(buf))
     }
 
-    pub fn body_hsv_rotate(
+    /// Applies HSV color transformation to specific parts of the Tee.
+    ///
+    /// # Arguments
+    ///
+    /// * `hsv` - A tuple of (hue, saturation, value) values, each in the range [0.0, 1.0].
+    /// * `parts` - A slice of `TeePart` specifying which parts to apply the transformation to.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, parts::TeePart};
+    ///
+    /// let mut tee = Tee::new(/* ... */)?;
+    /// // Apply a red tint to the body
+    /// tee.apply_hsv_to_parts((0.0, 1.0, 1.0), &[TeePart::Body]);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[instrument(level = "debug", skip(self), fields(hsv = ?hsv, parts_count = parts.len()))]
+    pub fn apply_hsv_to_parts(
         &mut self,
         hsv: (f32, f32, f32),
+        parts: &[TeePart],
     ) {
-        apply_ddnet_color(&mut self.body.value, hsv);
+        trace!("Applying HSV transformation to {} parts", parts.len());
+        for part in parts {
+            match part {
+                TeePart::Body => {
+                    img_hsv_transform(&mut self.body.value, hsv);
+                }
+                TeePart::BodyShadow => {
+                    img_hsv_transform(&mut self.body.shadow, hsv);
+                }
+                TeePart::Feet => {
+                    img_hsv_transform(&mut self.feet.value, hsv);
+                }
+                TeePart::FeetShadow => {
+                    img_hsv_transform(&mut self.feet.shadow, hsv);
+                }
+                TeePart::Hand => {
+                    img_hsv_transform(&mut self.hand.value, hsv);
+                }
+                TeePart::HandShadow => {
+                    img_hsv_transform(&mut self.hand.shadow, hsv);
+                }
+            }
+        }
+        debug!("Successfully applied HSV transformation to specified parts");
     }
-    pub fn body_shadow_hsv_rotate(
+
+    /// Applies HSV color transformation to all parts of the Tee.
+    ///
+    /// # Arguments
+    ///
+    /// * `hsv` - A tuple of (hue, saturation, value) values, each in the range [0.0, 1.0].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::Tee;
+    ///
+    /// let mut tee = Tee::new(/* ... */)?;
+    /// // Apply a blue tint to the entire character
+    /// tee.apply_hsv_to_all((0.6, 1.0, 1.0));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[instrument(level = "debug", skip(self), fields(hsv = ?hsv))]
+    pub fn apply_hsv_to_all(
         &mut self,
         hsv: (f32, f32, f32),
     ) {
-        apply_ddnet_color(&mut self.body.shadow, hsv);
+        trace!("Applying HSV transformation to all parts");
+        self.apply_hsv_to_parts(
+            hsv,
+            &[
+                TeePart::Body,
+                TeePart::BodyShadow,
+                TeePart::Feet,
+                TeePart::FeetShadow,
+                TeePart::Hand,
+                TeePart::HandShadow,
+            ],
+        );
+        debug!("Successfully applied HSV transformation to all parts");
     }
-    pub fn feet_hsv_rotate(
-        &mut self,
-        hsv: (f32, f32, f32),
-    ) {
-        apply_ddnet_color(&mut self.feet.value, hsv);
+
+    /// Composites the Tee with default options (happy eyes, PNG format).
+    ///
+    /// # Arguments
+    ///
+    /// * `skin` - The base `Skin` to draw the Tee parts onto.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` which is `Ok(Bytes)` containing the final image data on success,
+    /// or `Err(TeeError)` on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, skin::TEE_SKIN_LAYOUT};
+    ///
+    /// let tee = Tee::new(/* ... */)?;
+    /// let result = tee.compose_default(TEE_SKIN_LAYOUT)?;
+    /// std::fs::write("output.png", result)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[instrument(level = "info", skip(self, skin), fields(skin_container = ?skin.container))]
+    pub fn compose_default(
+        &self,
+        skin: Skin,
+    ) -> Result<Bytes> {
+        trace!("Composing with default options (happy eyes, PNG format)");
+        self.compose(skin, EyeType::Happy, ImageFormat::Png)
     }
-    pub fn feet_shadow_hsv_rotate(
-        &mut self,
-        hsv: (f32, f32, f32),
-    ) {
-        apply_ddnet_color(&mut self.feet.shadow, hsv);
+
+    /// Composites the Tee with custom options.
+    ///
+    /// # Arguments
+    ///
+    /// * `skin` - The base `Skin` to draw the Tee parts onto.
+    /// * `options` - A `ComposeOptions` struct specifying custom composition parameters.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` which is `Ok(Bytes)` containing the final image data on success,
+    /// or `Err(TeeError)` on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, compose::ComposeOptions, EyeType, skin::TEE_SKIN_LAYOUT};
+    /// use image::ImageFormat;
+    ///
+    /// let tee = Tee::new(/* ... */)?;
+    /// let options = ComposeOptions {
+    ///     eye_type: Some(EyeType::Surprise),
+    ///     format: Some(ImageFormat::Jpeg),
+    /// };
+    /// let result = tee.compose_with_options(TEE_SKIN_LAYOUT, options)?;
+    /// std::fs::write("output.jpg", result)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[instrument(level = "info", skip(self, skin, options), fields(skin_container = ?skin.container, options = ?options))]
+    pub fn compose_with_options(
+        &self,
+        skin: Skin,
+        options: ComposeOptions,
+    ) -> Result<Bytes> {
+        trace!("Composing with custom options: {:?}", options);
+        self.compose(
+            skin,
+            options.eye_type.unwrap_or(EyeType::Happy),
+            options.format.unwrap_or(ImageFormat::Png),
+        )
+    }
+
+    /// Returns all parts of the Tee as a HashMap.
+    ///
+    /// # Returns
+    ///
+    /// A `HashMap<TeePart, &WithShadow>` containing all parts of the Tee.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, parts::TeePart};
+    ///
+    /// let tee = Tee::new(/* ... */)?;
+    /// let all_parts = tee.get_all_parts();
+    /// let body_image = all_parts.get(&TeePart::Body).unwrap();
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[instrument(level = "debug", skip(self))]
+    pub fn get_all_parts(&self) -> HashMap<TeePart, &WithShadow> {
+        trace!("Collecting all parts into a HashMap");
+        let mut parts = HashMap::new();
+        parts.insert(TeePart::Body, &self.body);
+        parts.insert(TeePart::Feet, &self.feet);
+        parts.insert(TeePart::Hand, &self.hand);
+        debug!("Successfully collected all parts into a HashMap");
+        parts
+    }
+
+    /// Returns all eye types of the Tee as a HashMap.
+    ///
+    /// # Returns
+    ///
+    /// A `HashMap<EyeType, &RgbaImage>` containing all eye types of the Tee.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tee_morphosis::tee::{Tee, EyeType};
+    ///
+    /// let tee = Tee::new(/* ... */)?;
+    /// let all_eyes = tee.get_all_eyes();
+    /// let happy_eye = all_eyes.get(&EyeType::Happy).unwrap();
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[instrument(level = "debug", skip(self))]
+    pub fn get_all_eyes(&self) -> HashMap<EyeType, &RgbaImage> {
+        trace!("Collecting all eye types into a HashMap");
+        let mut eyes = HashMap::new();
+        eyes.insert(EyeType::Normal, self.get_eye(EyeType::Normal));
+        eyes.insert(EyeType::Angry, self.get_eye(EyeType::Angry));
+        eyes.insert(EyeType::Pain, self.get_eye(EyeType::Pain));
+        eyes.insert(EyeType::Happy, self.get_eye(EyeType::Happy));
+        eyes.insert(EyeType::Empty, self.get_eye(EyeType::Empty));
+        eyes.insert(EyeType::Surprise, self.get_eye(EyeType::Surprise));
+        debug!("Successfully collected all eye types into a HashMap");
+        eyes
+    }
+
+    // Helper methods for internal use
+
+    /// Composes all layers of the Tee onto the canvas in the correct order.
+    ///
+    /// # Arguments
+    ///
+    /// * `compose` - A closure that handles the actual composition of a layer.
+    /// * `skin` - The skin layout to use for positioning.
+    /// * `eye_type` - The eye type to use for the eyes.
+    fn compose_layers<F>(
+        &self,
+        compose: &mut F,
+        skin: &Skin,
+        eye_type: EyeType,
+    ) where
+        F: FnMut(&RgbaImage, SkinPS, UVPart),
+    {
+        trace!("Starting to compose layers in order");
+
+        // Layering order is important for correct appearance
+        compose(&self.body.shadow, skin.body, self.used_uv.body_shadow); // body shadow
+        compose(&self.feet.shadow, skin.feet_back, self.used_uv.feet_shadow); // back feet shadow
+        compose(&self.feet.shadow, skin.feet, self.used_uv.feet_shadow); // front feet shadow
+        compose(&self.feet.value, skin.feet_back, self.used_uv.feet); // back feet
+        compose(&self.body.value, skin.body, self.used_uv.body); // body
+
+        let eye = self.get_eye(eye_type);
+        compose(eye, skin.first_eyes, self.used_uv.eyes[0]); // first eye
+        compose(
+            &imageops::flip_horizontal(eye),
+            skin.second_eyes,
+            self.used_uv.eyes[0],
+        ); // second eye (flipped)
+
+        compose(&self.feet.value, skin.feet, self.used_uv.feet); // front feet
+
+        debug!("Successfully composed all layers");
     }
 }
 
@@ -502,10 +635,23 @@ impl Tee {
 /// # Errors
 ///
 /// Returns `TeeError::OutOfBounds` if the dimensions provided fall out of bounds.
+///
+/// # Example
+///
+/// ```rust
+/// use tee_morphosis::tee::extract_part;
+/// use image::DynamicImage;
+/// use tee_morphosis::tee::uv::Part;
+///
+/// let img = image::open("source.png")?;
+/// let part = Part { x: 10, y: 10, w: 50, h: 50 };
+/// let extracted = extract_part(&img, part)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[instrument(level = "debug", skip(img), fields(part = ?part))]
 fn extract_part(
     img: &DynamicImage,
-    part: Part,
+    part: UVPart,
 ) -> Result<RgbaImage> {
     let (img_width, img_height) = img.dimensions();
 
@@ -522,11 +668,173 @@ fn extract_part(
         });
     }
 
+    trace!(
+        "Extracting part at position ({}, {}) with size ({}, {})",
+        part.x, part.y, part.w, part.h
+    );
     let cropped_image = img.view(part.x, part.y, part.w, part.h).to_image();
     Ok(cropped_image)
 }
 
-// TODO: add tests & doc
+/// Decodes image data from bytes with the specified format.
+///
+/// # Arguments
+///
+/// * `data` - The raw bytes of the image.
+/// * `format` - The format of the image data.
+///
+/// # Returns
+///
+/// A `Result` which is `Ok(DynamicImage)` on successful decoding, or `Err(TeeError)` on failure.
+#[instrument(level = "debug", skip(data), fields(format = ?format, data_size = data.len()))]
+fn decode_image(
+    data: Bytes,
+    format: ImageFormat,
+) -> Result<DynamicImage> {
+    let mut img = ImageReader::new(Cursor::new(data));
+    img.set_format(format);
+    let img = img.decode()?;
+    Ok(img)
+}
+
+/// Validates that the image dimensions match the expected container dimensions.
+///
+/// # Arguments
+///
+/// * `actual` - The actual dimensions of the image.
+/// * `expected` - The expected dimensions of the image.
+///
+/// # Returns
+///
+/// A `Result` which is `Ok(())` if the dimensions match, or `Err(TeeError::InvalidDimensions)` if they don't.
+#[instrument(level = "debug", fields(actual = ?actual, expected = ?expected))]
+fn validate_image_dimensions(
+    actual: (u32, u32),
+    expected: (u32, u32),
+) -> Result<()> {
+    if actual != expected {
+        error!(
+            expected = ?expected,
+            found = ?actual,
+            "Invalid image dimensions."
+        );
+        return Err(TeeError::InvalidDimensions {
+            expected,
+            found: actual,
+        });
+    }
+    Ok(())
+}
+
+/// Extracts a part and its shadow from the source image.
+///
+/// # Arguments
+///
+/// * `img` - The source image.
+/// * `part` - The part to extract.
+/// * `shadow_part` - The shadow part to extract.
+///
+/// # Returns
+///
+/// A `Result` which is `Ok(WithShadow)` containing both the part and its shadow.
+#[instrument(level = "debug", skip(img), fields(part = ?part, shadow_part = ?shadow_part))]
+fn extract_with_shadow(
+    img: &DynamicImage,
+    part: UVPart,
+    shadow_part: UVPart,
+) -> Result<WithShadow> {
+    trace!("Extracting part and its shadow");
+    let value = extract_part(img, part)?;
+    let shadow = extract_part(img, shadow_part)?;
+    Ok(WithShadow {
+        value,
+        shadow,
+    })
+}
+
+/// Extracts all eye types from the source image.
+///
+/// # Arguments
+///
+/// * `img` - The source image.
+/// * `eye_parts` - An array of parts for each eye type.
+///
+/// # Returns
+///
+/// A `Result` which is `Ok([EyeTypeData; 6])` containing all eye types.
+#[instrument(level = "debug", skip(img, eye_parts))]
+fn extract_all_eyes(
+    img: &DynamicImage,
+    eye_parts: &[UVPart; 6],
+) -> Result<[EyeTypeData; 6]> {
+    trace!("Extracting all eye types");
+    let eyes = [
+        EyeTypeData::Normal(extract_part(img, eye_parts[0])?),
+        EyeTypeData::Angry(extract_part(img, eye_parts[1])?),
+        EyeTypeData::Pain(extract_part(img, eye_parts[2])?),
+        EyeTypeData::Happy(extract_part(img, eye_parts[3])?),
+        EyeTypeData::Empty(extract_part(img, eye_parts[4])?),
+        EyeTypeData::Surprise(extract_part(img, eye_parts[5])?),
+    ];
+    Ok(eyes)
+}
+
+/// Fetches an image from a URL and determines its format.
+///
+/// # Arguments
+///
+/// * `url` - The URL to fetch the image from.
+///
+/// # Returns
+///
+/// A `Result` which is `Ok((Bytes, ImageFormat))` containing the image data and its format.
+#[cfg(feature = "net")]
+#[instrument(level = "info", fields(url = %url))]
+async fn fetch_image_from_url(url: &str) -> Result<(Bytes, ImageFormat)> {
+    let response = reqwest::get(url).await.map_err(|e| {
+        error!(error = %e, "Failed to send request.");
+        TeeError::Reqwest(e)
+    })?;
+
+    // Determine format from Content-Type header
+    let format = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|mime| ImageFormat::from_mime_type(mime))
+        .ok_or_else(|| {
+            error!("'Content-Type' header is missing or invalid.");
+            TeeError::ReqWithOutContentType(url.to_string())
+        })?;
+
+    info!(determined_format = ?format, "Image format determined from response header.");
+
+    let bytes = response.bytes().await.map_err(|e| {
+        error!(error = %e, "Failed to read bytes from response.");
+        TeeError::Reqwest(e)
+    })?;
+
+    Ok((bytes, format))
+}
+
+/// Converts a DDnet color value to HSV format.
+///
+/// # Arguments
+///
+/// * `v` - The DDnet color value as a 32-bit integer.
+///
+/// # Returns
+///
+/// A tuple of (hue, saturation, value) values, each in the range [0.0, 1.0].
+///
+/// # Example
+///
+/// ```rust
+/// use tee_morphosis::tee::ddnet_to_hsv;
+///
+/// let hsv = ddnet_to_hsv(0xFF0000); // Red color
+/// assert_eq!(hsv, (0.0, 1.0, 1.0));
+/// ```
 pub fn ddnet_to_hsv(v: u32) -> (f32, f32, f32) {
     let h = ((v >> 16) & 0xFF) as f32 / 255.0;
     let s = ((v >> 8) & 0xFF) as f32 / 255.0;
@@ -534,10 +842,32 @@ pub fn ddnet_to_hsv(v: u32) -> (f32, f32, f32) {
     (h, s, v)
 }
 
-pub fn apply_ddnet_color(
+/// Applies a DDnet color transformation to an image.
+///
+/// This function converts each pixel to HSV, applies the specified HSV values,
+/// and then converts back to RGB while preserving the original alpha channel.
+///
+/// # Arguments
+///
+/// * `img` - A mutable reference to the image to transform.
+/// * `(h, s, v)` - The HSV values to apply, each in the range [0.0, 1.0].
+///
+/// # Example
+///
+/// ```rust
+/// use tee_morphosis::tee::img_hsv_transform;
+/// use image::RgbaImage;
+///
+/// let mut img = RgbaImage::new(100, 100);
+/// // Apply a red tint to the image
+/// img_hsv_transform(&mut img, (0.0, 1.0, 1.0));
+/// ```
+#[instrument(level = "trace", skip(img), fields(img_size = ?img.dimensions(), hsv = ?(h, s, v)))]
+pub fn img_hsv_transform(
     img: &mut RgbaImage,
     (h, s, v): (f32, f32, f32),
 ) {
+    trace!("Applying DDnet color transformation to image");
     for pixel in img.pixels_mut() {
         let a = pixel[3]; // alpha
 
@@ -563,4 +893,5 @@ pub fn apply_ddnet_color(
             a,
         ]);
     }
+    debug!("Successfully applied DDnet color transformation");
 }
