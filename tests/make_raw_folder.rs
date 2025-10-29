@@ -38,12 +38,8 @@ mod tests {
             fixture
         );
         let skin_data = fs::read(&fixture).expect("Failed to read fixture file");
-        let tee = Tee::new(
-            Bytes::from(skin_data),
-            TEE_UV_LAYOUT,
-            image::ImageFormat::Png,
-        )
-        .expect("Failed to parse TeeRaw");
+        let tee = Tee::new(Bytes::from(skin_data), image::ImageFormat::Png)
+            .expect("Failed to parse TeeRaw");
         let output_dir = setup_output_dir("raws");
 
         // 2. Сохранение частей
@@ -107,7 +103,7 @@ mod tests {
     /// Тестирует сохранение каждой отдельной части TeeRaw в файлы.
     async fn test_save_raw_parts_from_url() {
         // 1. Подготовка
-        let tee = Tee::new_from_url(
+        let tee = Tee::new_from_url_with_uv(
             "https://teedata.net/databasev2/skins/glow_rainbow/glow_rainbow.png",
             TEE_UV_LAYOUT,
         )

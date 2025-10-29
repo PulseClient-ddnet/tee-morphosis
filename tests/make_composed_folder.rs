@@ -4,7 +4,7 @@ mod tests {
 
     use bytes::Bytes;
     use image::EncodableLayout;
-    use tee_morphosis::tee::{EyeType, Tee, skin::TEE_SKIN_LAYOUT, uv::TEE_UV_LAYOUT};
+    use tee_morphosis::tee::{EyeType, Tee, skin::TEE_SKIN_LAYOUT};
 
     /// Возвращает путь к тестовому файлу скина.
     fn fixture_path() -> PathBuf {
@@ -38,12 +38,8 @@ mod tests {
             fixture
         );
         let skin_data = fs::read(&fixture).expect("Failed to read fixture file");
-        let tee = Tee::new(
-            Bytes::from(skin_data),
-            TEE_UV_LAYOUT,
-            image::ImageFormat::Png,
-        )
-        .expect("Failed to parse TeeRaw");
+        let tee = Tee::new(Bytes::from(skin_data), image::ImageFormat::Png)
+            .expect("Failed to parse TeeRaw");
         let output_dir = setup_output_dir("composed");
 
         // 2. Композиция и сохранение

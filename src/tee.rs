@@ -64,7 +64,7 @@ use crate::{
     error::{Result, TeeError},
     tee::{
         skin::{Skin, SkinPS},
-        uv::{Part, UV},
+        uv::{Part, TEE_UV_LAYOUT, UV},
     },
 };
 
@@ -81,6 +81,8 @@ pub struct Tee {
     /// [Normal, Angry, Pain, Happy, Empty, Surprise]
     pub eye: [EyeTypeData; 6],
     pub hand: WithShadow,
+
+    pub used_uv: UV,
 }
 
 // TODO: value and shadow can be hue rotated
@@ -128,6 +130,78 @@ impl EyeType {
 }
 
 impl Tee {
+    /// Parses a `Tee` struct from raw image data with default [uv]::[TEE_UV_LAYOUT].
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The raw bytes of an image containing the [Tee] parts.
+    /// * `format` - The [ImageFormat] of the input data (e.g., PNG, JPEG).
+    ///
+    /// # Returns
+    ///
+    /// A `Result` which is `Ok(Tee)` on successful parsing, or `Err(TeeError)` on failure.
+    #[instrument(level = "info", skip(data), fields(format = ?format))]
+    pub fn new(
+        data: Bytes,
+        format: ImageFormat,
+    ) -> Result<Self> {
+        let uv = TEE_UV_LAYOUT;
+        let mut img = ImageReader::new(Cursor::new(data));
+        img.set_format(format);
+        let img = img.decode()?;
+        let img_dimensions = img.dimensions();
+
+        debug!(image_dimensions = ?img_dimensions, "Image decoded successfully.");
+
+        if img_dimensions != uv.container {
+            error!(
+                expected = ?uv.container,
+                found = ?img_dimensions,
+                "Invalid image dimensions."
+            );
+            return Err(TeeError::InvalidDimensions {
+                expected: uv.container,
+                found: img_dimensions,
+            });
+        }
+
+        debug!("Extracting body parts.");
+        let body = WithShadow {
+            value: extract_part(&img, uv.body)?,
+            shadow: extract_part(&img, uv.body_shadow)?,
+        };
+
+        debug!("Extracting feet parts.");
+        let feet = WithShadow {
+            value: extract_part(&img, uv.feet)?,
+            shadow: extract_part(&img, uv.feet_shadow)?,
+        };
+
+        debug!("Extracting hand parts.");
+        let hand = WithShadow {
+            value: extract_part(&img, uv.hand)?,
+            shadow: extract_part(&img, uv.hand_shadow)?,
+        };
+
+        debug!("Extracting eye parts.");
+        let eye = [
+            EyeTypeData::Normal(extract_part(&img, uv.eyes[0])?),
+            EyeTypeData::Angry(extract_part(&img, uv.eyes[1])?),
+            EyeTypeData::Pain(extract_part(&img, uv.eyes[2])?),
+            EyeTypeData::Happy(extract_part(&img, uv.eyes[3])?),
+            EyeTypeData::Empty(extract_part(&img, uv.eyes[4])?),
+            EyeTypeData::Surprise(extract_part(&img, uv.eyes[5])?),
+        ];
+
+        Ok(Self {
+            body,
+            feet,
+            eye,
+            hand,
+            used_uv: uv,
+        })
+    }
+
     /// Parses a `Tee` struct from raw image data.
     ///
     /// # Arguments
@@ -140,7 +214,7 @@ impl Tee {
     ///
     /// A `Result` which is `Ok(Tee)` on successful parsing, or `Err(TeeError)` on failure.
     #[instrument(level = "info", skip(data, uv), fields(format = ?format))]
-    pub fn new(
+    pub fn new_with_uv(
         data: Bytes,
         uv: UV,
         format: ImageFormat,
@@ -197,6 +271,7 @@ impl Tee {
             feet,
             eye,
             hand,
+            used_uv: uv,
         })
     }
 
@@ -214,7 +289,7 @@ impl Tee {
     ///
     /// A [Result] which is Ok([Tee]) on successful fetching and parsing, or Err([TeeError]) on failure.
     #[instrument(level = "info", skip(uv), fields(url = %url))]
-    pub async fn new_from_url(
+    pub async fn new_from_url_with_uv(
         url: &str,
         uv: UV,
     ) -> Result<Self> {
@@ -244,7 +319,50 @@ impl Tee {
         info!(bytes_len = bytes.len(), "Successfully fetched image data.");
 
         // Use `instrument` to create a new span for the `Tee::new` call
-        tokio::task::block_in_place(|| Self::new(bytes, uv, format))
+        tokio::task::block_in_place(|| Self::new_with_uv(bytes, uv, format))
+    }
+
+    #[cfg(feature = "net")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "net")))]
+    /// Asynchronously fetches a [Tee] skin from a URL and parses it.
+    /// The image format is determined from the `Content-Type` header of the response.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - A string slice that holds the URL of the skin image.
+    ///
+    /// # Returns
+    ///
+    /// A [Result] which is Ok([Tee]) on successful fetching and parsing, or Err([TeeError]) on failure.
+    #[instrument(level = "info", fields(url = %url))]
+    pub async fn new_from_url(url: &str) -> Result<Self> {
+        let response = reqwest::get(url).await.map_err(|e| {
+            error!(error = %e, "Failed to send request.");
+            TeeError::Reqwest(e)
+        })?;
+
+        // Determine format from Content-Type header
+        let format = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|mime| ImageFormat::from_mime_type(mime))
+            .ok_or_else(|| {
+                error!("'Content-Type' header is missing or invalid.");
+                TeeError::ReqWithOutContentType(url.to_string())
+            })?;
+
+        info!(determined_format = ?format, "Image format determined from response header.");
+
+        let bytes = response.bytes().await.map_err(|e| {
+            error!(error = %e, "Failed to read bytes from response.");
+            TeeError::Reqwest(e)
+        })?;
+
+        info!(bytes_len = bytes.len(), "Successfully fetched image data.");
+
+        // Use `instrument` to create a new span for the `Tee::new` call
+        tokio::task::block_in_place(|| Self::new(bytes, format))
     }
 
     /// Retrieves the image for a specific eye type.
@@ -300,11 +418,12 @@ impl Tee {
         img_format: ImageFormat,
     ) -> Result<Bytes> {
         let mut canvas = RgbaImage::new(skin.container.0, skin.container.1);
-        let mut compose = |layer: &RgbaImage, ((x, y), (w, h)): SkinPS| {
+        let mut compose = |layer: &RgbaImage, ((x, y), scale): SkinPS, uv_part: Part| {
             debug!(
-                "Composing layer at position ({}, {}) with size ({}, {})",
-                x, y, w, h
+                "Composing layer at position ({}, {}) with size ({}, {}) and scale {}",
+                x, y, uv_part.w, uv_part.h, scale
             );
+            let (w, h) = skin::scale((uv_part.w, uv_part.h), scale);
             imageops::overlay(
                 &mut canvas,
                 &imageops::resize(layer, w, h, imageops::FilterType::Triangle),
@@ -314,15 +433,19 @@ impl Tee {
         };
 
         // Layering order is important for correct appearance
-        compose(&self.feet.shadow, skin.back_feet); // back feet shadow
-        compose(&self.body.shadow, skin.body); // body shadow
-        compose(&self.feet.shadow, skin.front_feet); // front feet shadow
-        compose(&self.feet.value, skin.back_feet); // back feet
-        compose(&self.body.value, skin.body); // body
-        compose(&self.feet.value, skin.front_feet); // front feet
+        compose(&self.body.shadow, skin.body, self.used_uv.body_shadow); // body shadow
+        compose(&self.feet.shadow, skin.feet_back, self.used_uv.feet_shadow); // back feet shadow
+        compose(&self.feet.shadow, skin.feet, self.used_uv.feet_shadow); // front feet shadow
+        compose(&self.feet.value, skin.feet_back, self.used_uv.feet); // back feet
+        compose(&self.body.value, skin.body, self.used_uv.body); // body
         let eye = self.get_eye(eye_type);
-        compose(eye, skin.first_eyes); // first eye
-        compose(&imageops::flip_horizontal(eye), skin.second_eyes); // second eye (flipped)
+        compose(eye, skin.first_eyes, self.used_uv.eyes[0]); // first eye
+        compose(
+            &imageops::flip_horizontal(eye),
+            skin.second_eyes,
+            self.used_uv.eyes[0],
+        ); // second eye (flipped)
+        compose(&self.feet.value, skin.feet, self.used_uv.feet); // front feet
 
         let mut buf = Vec::new();
         let mut cursor = Cursor::new(&mut buf);

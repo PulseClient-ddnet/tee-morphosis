@@ -5,7 +5,7 @@ pub const FEET_SIZE: ContentSize = (64, 32);
 pub const EYE_SIZE: ContentSize = (32, 32);
 pub const HAND_SIZE: ContentSize = (32, 32);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Part {
     pub x: u32,
     pub y: u32,
@@ -13,7 +13,7 @@ pub struct Part {
     pub h: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 /// Mappings for parsing
 pub struct UV {
     pub body: Part,
