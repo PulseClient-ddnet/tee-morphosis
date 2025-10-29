@@ -53,6 +53,7 @@
 
 pub mod builder;
 pub mod compose;
+pub mod hsl;
 pub mod parts;
 pub mod skin;
 pub mod uv;
@@ -60,13 +61,14 @@ pub mod uv;
 use std::{collections::HashMap, io::Cursor};
 
 use bytes::Bytes;
-use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, Rgba, RgbaImage, imageops};
+use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, RgbaImage, imageops};
 use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::{
     error::{Result, TeeError},
     tee::{
         compose::ComposeOptions,
+        hsl::img_hsl_transform,
         parts::{EyeType, EyeTypeData, TeePart, WithShadow},
         skin::{Skin, SkinPS},
         uv::{TEE_UV_LAYOUT, UV, UVPart},
@@ -385,32 +387,32 @@ impl Tee {
     /// tee.apply_hsv_to_parts((0.0, 1.0, 1.0), &[TeePart::Body]);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    #[instrument(level = "debug", skip(self), fields(hsv = ?hsv, parts_count = parts.len()))]
+    #[instrument(level = "debug", skip(self), fields(hsl = ?hsl, parts_count = parts.len()))]
     pub fn apply_hsv_to_parts(
         &mut self,
-        hsv: (f32, f32, f32),
+        hsl: (f32, f32, f32),
         parts: &[TeePart],
     ) {
         trace!("Applying HSV transformation to {} parts", parts.len());
         for part in parts {
             match part {
                 TeePart::Body => {
-                    img_hsv_transform(&mut self.body.value, hsv);
+                    img_hsl_transform(&mut self.body.value, hsl);
                 }
                 TeePart::BodyShadow => {
-                    img_hsv_transform(&mut self.body.shadow, hsv);
+                    img_hsl_transform(&mut self.body.shadow, hsl);
                 }
                 TeePart::Feet => {
-                    img_hsv_transform(&mut self.feet.value, hsv);
+                    img_hsl_transform(&mut self.feet.value, hsl);
                 }
                 TeePart::FeetShadow => {
-                    img_hsv_transform(&mut self.feet.shadow, hsv);
+                    img_hsl_transform(&mut self.feet.shadow, hsl);
                 }
                 TeePart::Hand => {
-                    img_hsv_transform(&mut self.hand.value, hsv);
+                    img_hsl_transform(&mut self.hand.value, hsl);
                 }
                 TeePart::HandShadow => {
-                    img_hsv_transform(&mut self.hand.shadow, hsv);
+                    img_hsl_transform(&mut self.hand.shadow, hsl);
                 }
             }
         }
@@ -815,83 +817,4 @@ async fn fetch_image_from_url(url: &str) -> Result<(Bytes, ImageFormat)> {
     })?;
 
     Ok((bytes, format))
-}
-
-/// Converts a DDnet color value to HSV format.
-///
-/// # Arguments
-///
-/// * `v` - The DDnet color value as a 32-bit integer.
-///
-/// # Returns
-///
-/// A tuple of (hue, saturation, value) values, each in the range [0.0, 1.0].
-///
-/// # Example
-///
-/// ```rust
-/// use tee_morphosis::tee::ddnet_to_hsv;
-///
-/// let hsv = ddnet_to_hsv(0xFF0000); // Red color
-/// assert_eq!(hsv, (0.0, 1.0, 1.0));
-/// ```
-pub fn ddnet_to_hsv(v: u32) -> (f32, f32, f32) {
-    let h = ((v >> 16) & 0xFF) as f32 / 255.0;
-    let s = ((v >> 8) & 0xFF) as f32 / 255.0;
-    let v = (v & 0xFF) as f32 / 255.0;
-    (h, s, v)
-}
-
-/// Applies a DDnet color transformation to an image.
-///
-/// This function converts each pixel to HSV, applies the specified HSV values,
-/// and then converts back to RGB while preserving the original alpha channel.
-///
-/// # Arguments
-///
-/// * `img` - A mutable reference to the image to transform.
-/// * `(h, s, v)` - The HSV values to apply, each in the range [0.0, 1.0].
-///
-/// # Example
-///
-/// ```rust
-/// use tee_morphosis::tee::img_hsv_transform;
-/// use image::RgbaImage;
-///
-/// let mut img = RgbaImage::new(100, 100);
-/// // Apply a red tint to the image
-/// img_hsv_transform(&mut img, (0.0, 1.0, 1.0));
-/// ```
-#[instrument(level = "trace", skip(img), fields(img_size = ?img.dimensions(), hsv = ?(h, s, v)))]
-pub fn img_hsv_transform(
-    img: &mut RgbaImage,
-    (h, s, v): (f32, f32, f32),
-) {
-    trace!("Applying DDnet color transformation to image");
-    for pixel in img.pixels_mut() {
-        let a = pixel[3]; // alpha
-
-        // HSV -> RGB
-        let c = v * s;
-        let hh = h * 6.0;
-        let x = c * (1.0 - ((hh % 2.0) - 1.0).abs());
-        let m = v - c;
-
-        let (r1, g1, b1) = match hh.floor() as u32 {
-            0 => (c, x, 0.0),
-            1 => (x, c, 0.0),
-            2 => (0.0, c, x),
-            3 => (0.0, x, c),
-            4 => (x, 0.0, c),
-            _ => (c, 0.0, x),
-        };
-
-        *pixel = Rgba([
-            ((r1 + m) * 255.0).clamp(0.0, 255.0) as u8,
-            ((g1 + m) * 255.0).clamp(0.0, 255.0) as u8,
-            ((b1 + m) * 255.0).clamp(0.0, 255.0) as u8,
-            a,
-        ]);
-    }
-    debug!("Successfully applied DDnet color transformation");
 }

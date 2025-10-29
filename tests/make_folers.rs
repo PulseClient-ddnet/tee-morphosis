@@ -7,7 +7,12 @@ mod tests {
     use image::EncodableLayout;
     #[cfg(feature = "net")]
     use tee_morphosis::tee::uv::TEE_UV_LAYOUT;
-    use tee_morphosis::tee::{Tee, parts::EyeType, skin::TEE_SKIN_LAYOUT};
+    use tee_morphosis::tee::{
+        Tee,
+        hsl::ddnet_color_to_hsl,
+        parts::{EyeType, TeePart},
+        skin::TEE_SKIN_LAYOUT,
+    };
 
     fn fixture_path() -> PathBuf {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -27,8 +32,7 @@ mod tests {
         path
     }
 
-    #[test]
-    fn test_save_raw_parts() {
+    fn get_tee() -> Tee {
         let fixture = fixture_path();
         assert!(
             fixture.exists(),
@@ -38,6 +42,12 @@ mod tests {
         let skin_data = fs::read(&fixture).expect("Failed to read fixture file");
         let tee = Tee::new(Bytes::from(skin_data), image::ImageFormat::Png)
             .expect("Failed to parse TeeRaw");
+        tee
+    }
+
+    #[test]
+    fn test_save_raw_parts() {
+        let tee = get_tee();
         let output_dir = setup_output_dir("raws");
 
         tee.body
@@ -155,15 +165,7 @@ mod tests {
 
     #[test]
     fn test_save_composed_image() {
-        let fixture = fixture_path();
-        assert!(
-            fixture.exists(),
-            "Test fixture not found at {:?}. Please download a skin and place it there.",
-            fixture
-        );
-        let skin_data = fs::read(&fixture).expect("Failed to read fixture file");
-        let tee = Tee::new(Bytes::from(skin_data), image::ImageFormat::Png)
-            .expect("Failed to parse TeeRaw");
+        let tee = get_tee();
         let output_dir = setup_output_dir("composed");
 
         for eye_type in [
@@ -188,5 +190,55 @@ mod tests {
             .collect();
         assert_eq!(files.len(), 6);
         println!("✅ Composed images successfully saved to: {:?}", output_dir);
+    }
+
+    #[test]
+    fn hsl_transpose() {
+        let output_dir = setup_output_dir("hsved");
+        let hsl = ddnet_color_to_hsl(1900500);
+        '_body: {
+            let mut tee = get_tee();
+            tee.apply_hsv_to_parts(hsl, &[TeePart::Body, TeePart::BodyShadow]);
+            fs::write(
+                output_dir.join("body_hsved").with_extension("png"),
+                tee.compose_default(TEE_SKIN_LAYOUT).unwrap(),
+            )
+            .unwrap();
+        }
+        '_body_feet: {
+            let mut tee = get_tee();
+            tee.apply_hsv_to_parts(
+                hsl,
+                &[
+                    TeePart::Body,
+                    TeePart::BodyShadow,
+                    TeePart::Feet,
+                    TeePart::FeetShadow,
+                ],
+            );
+            fs::write(
+                output_dir.join("body_feet_hsved").with_extension("png"),
+                tee.compose_default(TEE_SKIN_LAYOUT).unwrap(),
+            )
+            .unwrap();
+        }
+        '_feet: {
+            let mut tee = get_tee();
+            tee.apply_hsv_to_parts(hsl, &[TeePart::Feet, TeePart::FeetShadow]);
+            fs::write(
+                output_dir.join("feet_hsved").with_extension("png"),
+                tee.compose_default(TEE_SKIN_LAYOUT).unwrap(),
+            )
+            .unwrap();
+        }
+        '_full: {
+            let mut tee = get_tee();
+            tee.apply_hsv_to_all(hsl);
+            fs::write(
+                output_dir.join("full_hsved").with_extension("png"),
+                tee.compose_default(TEE_SKIN_LAYOUT).unwrap(),
+            )
+            .unwrap();
+        }
     }
 }
