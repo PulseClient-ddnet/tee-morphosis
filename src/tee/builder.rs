@@ -69,6 +69,7 @@ impl TeeBuilder {
 
     #[cfg(not(feature = "net"))]
     pub fn build(self) -> Result<Tee> {
+        use crate::tee::TeeError;
         match (self.data, self.format, self.uv) {
             (Some(data), Some(format), uv) => match uv {
                 Some(uv) => Tee::new_with_uv(data, uv, format),
