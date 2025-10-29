@@ -5,7 +5,9 @@ mod tests {
 
     use bytes::Bytes;
     use image::EncodableLayout;
-    use tee_morphosis::tee::{Tee, parts::EyeType, skin::TEE_SKIN_LAYOUT, uv::TEE_UV_LAYOUT};
+    #[cfg(feature = "net")]
+    use tee_morphosis::tee::uv::TEE_UV_LAYOUT;
+    use tee_morphosis::tee::{Tee, parts::EyeType, skin::TEE_SKIN_LAYOUT};
 
     fn fixture_path() -> PathBuf {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
