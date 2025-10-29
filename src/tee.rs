@@ -57,9 +57,7 @@ pub mod uv;
 use std::io::Cursor;
 
 use bytes::Bytes;
-use image::{
-    DynamicImage, GenericImageView, ImageFormat, ImageReader, Rgb, Rgba, RgbaImage, imageops,
-};
+use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, Rgba, RgbaImage, imageops};
 use tracing::{debug, error, info, instrument}; // Added `Instrument`
 
 use crate::{
