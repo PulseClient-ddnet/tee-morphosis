@@ -7,7 +7,7 @@ authors = ["TOwInOK <60252419+TOwInOK@users.noreply.github.com>"]
 repository = "https://github.com/PulseClient-ddnet/tee-morphosis"
 license = "MIT"                                                   #"Apache-2.0"
 description = "Lib for parsing, splitting and building tee"
-keywords = ["ddnet", "parsing", "tee", "skin", "uv", "teeworlds"]
+keywords = ["ddnet", "parsing", "tee", "uv", "teeworlds"]
 readme = "README.md"
 
 [dependencies]

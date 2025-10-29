@@ -17,14 +17,14 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tee_morphosis = "0.0.1"
+tee_morphosis = "1.3.0"
 ```
 
 To use network capabilities (loading skins from URLs), enable the `net` feature:
 
 ```toml
 [dependencies]
-tee_morphosis = { version = "0.0.1", features = ["net"] }
+tee_morphosis = { version = "1.3.0", features = ["net"] }
 ```
 
 ## How to Use
