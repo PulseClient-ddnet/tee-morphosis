@@ -319,7 +319,9 @@ impl Tee {
         info!(bytes_len = bytes.len(), "Successfully fetched image data.");
 
         // Use `instrument` to create a new span for the `Tee::new` call
-        tokio::task::block_in_place(|| Self::new_with_uv(bytes, uv, format))
+        tokio::task::spawn_blocking(move || Self::new_with_uv(bytes, uv, format))
+            .await
+            .map_err(TeeError::Join)?
     }
 
     #[cfg(feature = "net")]
@@ -361,8 +363,9 @@ impl Tee {
 
         info!(bytes_len = bytes.len(), "Successfully fetched image data.");
 
-        // Use `instrument` to create a new span for the `Tee::new` call
-        tokio::task::block_in_place(|| Self::new(bytes, format))
+        tokio::task::spawn_blocking(move || Self::new(bytes, format))
+            .await
+            .map_err(TeeError::Join)?
     }
 
     /// Retrieves the image for a specific eye type.

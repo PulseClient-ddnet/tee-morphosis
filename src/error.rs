@@ -6,6 +6,9 @@ pub enum TeeError {
     #[error("Got error then work with url context: {0}")]
     Reqwest(reqwest::Error),
     #[cfg(feature = "net")]
+    #[error("Got error then using task in async context: {0}")]
+    Join(tokio::task::JoinError),
+    #[cfg(feature = "net")]
     #[error("Req does not contains any img content type: {0}")]
     ReqWithOutContentType(String),
 

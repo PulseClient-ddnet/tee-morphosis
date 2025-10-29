@@ -20,7 +20,7 @@ image = { version = "0.25.8", default-features = false, features = ["png", "webp
 
 [dev-dependencies]
 tee_morphosis = {path = ".", features = ["net"]}
-tokio = { version = "1.48.0", features = [ "macros"] }
+tokio = { version = "1.48.0", features = [ "macros", "rt-multi-thread"] }
 
 
 [features]
