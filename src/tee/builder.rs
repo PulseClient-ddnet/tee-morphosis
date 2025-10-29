@@ -6,6 +6,7 @@ use crate::tee::uv::UV;
 use bytes::Bytes;
 use image::ImageFormat;
 
+#[derive(Debug, Default, Clone)]
 pub struct TeeBuilder {
     data: Option<Bytes>,
     format: Option<ImageFormat>,
@@ -16,13 +17,7 @@ pub struct TeeBuilder {
 
 impl TeeBuilder {
     pub fn new() -> Self {
-        Self {
-            data: None,
-            format: None,
-            #[cfg(feature = "net")]
-            url: None,
-            uv: None,
-        }
+        Self::default()
     }
 
     pub fn with_data(

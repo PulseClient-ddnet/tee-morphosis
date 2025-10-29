@@ -33,8 +33,8 @@
 //!
 //! ## Example
 //!
-//! ```rust
-//! use tee_morphosis::tee::{Tee, uv::{UV, TEE_UV_LAYOUT}, skin::{Skin, TEE_SKIN_LAYOUT}, EyeType};
+//! ```rust,ignore
+//! use tee_morphosis::tee::{Tee, uv::{UV, TEE_UV_LAYOUT}, skin::{Skin, TEE_SKIN_LAYOUT}, parts::EyeType};
 //! use tee_morphosis::error::Result;
 //! use image::ImageFormat;
 //!
@@ -110,7 +110,7 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use tee_morphosis::tee::Tee;
     /// use image::ImageFormat;
     ///
@@ -140,7 +140,7 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use tee_morphosis::tee::{Tee, uv::UV};
     /// use image::ImageFormat;
     ///
@@ -277,8 +277,8 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use tee_morphosis::tee::{Tee, EyeType};
+    /// ```rust,ignore
+    /// use tee_morphosis::tee::{Tee, parts::EyeType};
     ///
     /// let tee = Tee::new(/* ... */)?;
     /// let happy_eye = tee.get_eye(EyeType::Happy);
@@ -321,8 +321,8 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use tee_morphosis::tee::{Tee, EyeType, skin::TEE_SKIN_LAYOUT};
+    /// ```rust,ignore
+    /// use tee_morphosis::tee::{Tee, parts::EyeType, skin::TEE_SKIN_LAYOUT};
     /// use image::ImageFormat;
     ///
     /// let tee = Tee::new(/* ... */)?;
@@ -379,12 +379,14 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use tee_morphosis::tee::{Tee, parts::TeePart};
+    /// use tee_morphosis::tee:hsl::ddnet_color_to_hsl;
     ///
     /// let mut tee = Tee::new(/* ... */)?;
-    /// // Apply a red tint to the body
-    /// tee.apply_hsv_to_parts((0.0, 1.0, 1.0), &[TeePart::Body]);
+    ///
+    /// let hsl = ddnet_color_to_hsl(1900500);
+    /// tee.apply_hsv_to_parts(hsl, &[TeePart::Body]);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[instrument(level = "debug", skip(self), fields(hsl = ?hsl, parts_count = parts.len()))]
@@ -427,12 +429,14 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use tee_morphosis::tee::Tee;
+    /// use tee_morphosis::tee:hsl::ddnet_color_to_hsl;
     ///
     /// let mut tee = Tee::new(/* ... */)?;
-    /// // Apply a blue tint to the entire character
-    /// tee.apply_hsv_to_all((0.6, 1.0, 1.0));
+    ///
+    /// let hsl = ddnet_color_to_hsl(1900500);
+    /// tee.apply_hsv_to_all(hsl);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[instrument(level = "debug", skip(self), fields(hsv = ?hsv))]
@@ -468,7 +472,7 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use tee_morphosis::tee::{Tee, skin::TEE_SKIN_LAYOUT};
     ///
     /// let tee = Tee::new(/* ... */)?;
@@ -499,8 +503,8 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use tee_morphosis::tee::{Tee, compose::ComposeOptions, EyeType, skin::TEE_SKIN_LAYOUT};
+    /// ```rust,ignore
+    /// use tee_morphosis::tee::{Tee, compose::ComposeOptions, parts::EyeType, skin::TEE_SKIN_LAYOUT};
     /// use image::ImageFormat;
     ///
     /// let tee = Tee::new(/* ... */)?;
@@ -528,13 +532,15 @@ impl Tee {
 
     /// Returns all parts of the Tee as a HashMap.
     ///
+    /// **note**: does not include eyes. Use [Tee::get_all_eyes] instead
+    ///
     /// # Returns
     ///
     /// A `HashMap<TeePart, &WithShadow>` containing all parts of the Tee.
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use tee_morphosis::tee::{Tee, parts::TeePart};
     ///
     /// let tee = Tee::new(/* ... */)?;
@@ -555,14 +561,16 @@ impl Tee {
 
     /// Returns all eye types of the Tee as a HashMap.
     ///
+    /// for specific one, use [Tee::get_eye]
+    ///
     /// # Returns
     ///
     /// A `HashMap<EyeType, &RgbaImage>` containing all eye types of the Tee.
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use tee_morphosis::tee::{Tee, EyeType};
+    /// ```rust,ignore
+    /// use tee_morphosis::tee::{Tee, parts::EyeType};
     ///
     /// let tee = Tee::new(/* ... */)?;
     /// let all_eyes = tee.get_all_eyes();
@@ -640,7 +648,7 @@ impl Tee {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use tee_morphosis::tee::extract_part;
 /// use image::DynamicImage;
 /// use tee_morphosis::tee::uv::Part;

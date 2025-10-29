@@ -1,7 +1,10 @@
+//! Module for color transforms
+
 use image::RgbaImage;
 
 const DARKEST_LGT: f32 = 0.5;
 
+/// Convert ddnet color format to hsl
 pub fn ddnet_color_to_hsl(color: u32) -> (f32, f32, f32) {
     let h_raw = ((color >> 16) & 0xFF) as f32;
     let s_raw = ((color >> 8) & 0xFF) as f32;
@@ -11,12 +14,12 @@ pub fn ddnet_color_to_hsl(color: u32) -> (f32, f32, f32) {
     let s = s_raw / 255.0;
     let l_compressed = l_raw / 255.0;
 
-    // Применяем UnclampLighting
     let l = DARKEST_LGT + l_compressed * (1.0 - DARKEST_LGT);
 
     (h, s, l)
 }
 
+/// Convert hsl for rgb compatibilities
 fn hsl_to_rgb(
     h: f32,
     s: f32,
@@ -40,6 +43,7 @@ fn hsl_to_rgb(
     (r + m, g + m, b + m)
 }
 
+/// Take img and apply hsl to it
 pub fn img_hsl_transform(
     img: &mut RgbaImage,
     (h, s, l): (f32, f32, f32),

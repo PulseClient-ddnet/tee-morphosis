@@ -38,7 +38,7 @@ use std::fs;
 use bytes::Bytes;
 use tee_morphosis::tee::{
     Tee,
-    EyeType,
+    parts::EyeType,
     uv::TEE_UV_LAYOUT,
     skin::TEE_SKIN_LAYOUT,
 };
@@ -64,10 +64,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ImageFormat::Png,
     )?;
 
+    // or use
+    //
+    // tee.compose_default(TEE_SKIN_LAYOUT)?;
+
     // 4. Save the result to a file
     fs::write("composed_tee.png", &image_bytes)?;
 
     println!("Skin successfully created and saved to composed_tee.png");
+
+    Ok(())
+}
+```
+
+### Example: Tee color rotating
+
+Here's a simple example of how to change color with DDNet color value (or hls)
+
+```rust
+use std::fs;
+use bytes::Bytes;
+use tee_morphosis::tee::{
+    Tee,
+    hsl::ddnet_color_to_hsl,
+    parts::TeePart
+};
+use image::ImageFormat;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Read your skin data from a file
+    // Replace "path/to/your_skin.png" with the actual path
+    let skin_data = fs::read("path/to/your_skin.png")?;
+
+    // 2. Create a Tee instance from the image data
+    let mut tee = Tee::new(
+        Bytes::from(skin_data),
+        TEE_UV_LAYOUT,
+        ImageFormat::Png,
+    )?;
+
+    // 3. Generate hls from ddnet value
+    let hsl = ddnet_color_to_hsl(1900500);
+    // 4. apply to all parts
+    tee.apply_hsv_to_all(hsl);
+    // 4.1 or peer parts
+    tee.apply_hsv_to_parts(hsl, &[TeePart::Body, TeePart::BodyShadow]);
+    // 5. Now, compose it
+    let composed = tee.compose_default(TEE_SKIN_LAYOUT)?;
+
+    // 4. Save the result to a file
+    fs::write("colored_composed_tee.png", &composed)?;
+
+    println!("Skin successfully created, colored and saved to colored_composed_tee.png");
 
     Ok(())
 }
@@ -80,7 +128,7 @@ This example demonstrates how to fetch a skin from the internet and assemble it.
 ```rust
 use tee_morphosis::tee::{
     Tee,
-    EyeType,
+    parts::EyeType,
     uv::TEE_UV_LAYOUT,
     skin::TEE_SKIN_LAYOUT,
 };
