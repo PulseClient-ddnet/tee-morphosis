@@ -9,6 +9,7 @@ use image::ImageFormat;
 pub struct TeeBuilder {
     data: Option<Bytes>,
     format: Option<ImageFormat>,
+    #[cfg(feature = "net")]
     url: Option<String>,
     uv: Option<UV>,
 }
@@ -18,6 +19,7 @@ impl TeeBuilder {
         Self {
             data: None,
             format: None,
+            #[cfg(feature = "net")]
             url: None,
             uv: None,
         }
