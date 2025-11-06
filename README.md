@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // or use
     //
-    // tee.compose_default(TEE_SKIN_LAYOUT)?;
+    // tee.compose_png(TEE_SKIN_LAYOUT, ImageFormat::Png)?;
 
     // 4. Save the result to a file
     fs::write("composed_tee.png", &image_bytes)?;
@@ -106,11 +106,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Generate hls from ddnet value
     let hsl = ddnet_color_to_hsl(1900500);
     // 4. apply to all parts
-    tee.apply_hsv_to_all(hsl);
+    tee.apply_hsl_to_all(hsl);
     // 4.1 or peer parts
-    tee.apply_hsv_to_parts(hsl, &[TeePart::Body, TeePart::BodyShadow]);
+    tee.apply_hsl_to_parts(hsl, &[TeePart::Body, TeePart::BodyShadow]);
     // 5. Now, compose it
-    let composed = tee.compose_default(TEE_SKIN_LAYOUT)?;
+    let composed = tee.compose_png(TEE_SKIN_LAYOUT, ImageFormat::Png)?;
 
     // 4. Save the result to a file
     fs::write("colored_composed_tee.png", &composed)?;

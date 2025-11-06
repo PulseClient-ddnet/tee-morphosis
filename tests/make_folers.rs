@@ -194,20 +194,20 @@ mod tests {
 
     #[test]
     fn hsl_transpose() {
-        let output_dir = setup_output_dir("hsved");
+        let output_dir = setup_output_dir("hsled");
         let hsl = ddnet_color_to_hsl(1900500);
         '_body: {
             let mut tee = get_tee();
-            tee.apply_hsv_to_parts(hsl, &[TeePart::Body, TeePart::BodyShadow]);
+            tee.apply_hsl_to_parts(hsl, &[TeePart::Body, TeePart::BodyShadow]);
             fs::write(
-                output_dir.join("body_hsved").with_extension("png"),
-                tee.compose_default(TEE_SKIN_LAYOUT).unwrap(),
+                output_dir.join("body_hsled").with_extension("png"),
+                tee.compose_png(TEE_SKIN_LAYOUT, EyeType::Happy).unwrap(),
             )
             .unwrap();
         }
         '_body_feet: {
             let mut tee = get_tee();
-            tee.apply_hsv_to_parts(
+            tee.apply_hsl_to_parts(
                 hsl,
                 &[
                     TeePart::Body,
@@ -217,26 +217,26 @@ mod tests {
                 ],
             );
             fs::write(
-                output_dir.join("body_feet_hsved").with_extension("png"),
-                tee.compose_default(TEE_SKIN_LAYOUT).unwrap(),
+                output_dir.join("body_feet_hsled").with_extension("png"),
+                tee.compose_png(TEE_SKIN_LAYOUT, EyeType::Happy).unwrap(),
             )
             .unwrap();
         }
         '_feet: {
             let mut tee = get_tee();
-            tee.apply_hsv_to_parts(hsl, &[TeePart::Feet, TeePart::FeetShadow]);
+            tee.apply_hsl_to_parts(hsl, &[TeePart::Feet, TeePart::FeetShadow]);
             fs::write(
-                output_dir.join("feet_hsved").with_extension("png"),
-                tee.compose_default(TEE_SKIN_LAYOUT).unwrap(),
+                output_dir.join("feet_hsled").with_extension("png"),
+                tee.compose_png(TEE_SKIN_LAYOUT, EyeType::Happy).unwrap(),
             )
             .unwrap();
         }
         '_full: {
             let mut tee = get_tee();
-            tee.apply_hsv_to_all(hsl);
+            tee.apply_hsl_to_all(hsl);
             fs::write(
-                output_dir.join("full_hsved").with_extension("png"),
-                tee.compose_default(TEE_SKIN_LAYOUT).unwrap(),
+                output_dir.join("full_hsled").with_extension("png"),
+                tee.compose_png(TEE_SKIN_LAYOUT, EyeType::Happy).unwrap(),
             )
             .unwrap();
         }

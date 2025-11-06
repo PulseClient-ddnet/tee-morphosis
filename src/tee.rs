@@ -52,7 +52,6 @@
 //! ```
 
 pub mod builder;
-pub mod compose;
 pub mod hsl;
 pub mod parts;
 pub mod skin;
@@ -67,8 +66,7 @@ use tracing::{debug, error, info, instrument, trace, warn};
 use crate::{
     error::{Result, TeeError},
     tee::{
-        compose::ComposeOptions,
-        hsl::img_hsl_transform,
+        hsl::{HSL, img_hsl_transform},
         parts::{EyeType, EyeTypeData, TeePart, WithShadow},
         skin::{Skin, SkinPS},
         uv::{TEE_UV_LAYOUT, UV, UVPart},
@@ -195,7 +193,7 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use tee_morphosis::tee::{Tee, uv::UV};
     ///
     /// #[tokio::main]
@@ -239,7 +237,7 @@ impl Tee {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use tee_morphosis::tee::Tee;
     ///
     /// #[tokio::main]
@@ -263,47 +261,93 @@ impl Tee {
             .map_err(TeeError::Join)?
     }
 
-    /// Retrieves the image for a specific eye type.
+    /// Applies HSL color transformation to specific parts of the Tee.
     ///
     /// # Arguments
     ///
-    /// * `type` - The `EyeType` to retrieve.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the `RgbaImage` corresponding to the requested eye type.
-    /// This function will panic if the internal state is inconsistent, which is
-    /// prevented by the construction logic in `Tee::new`.
+    /// * `hls` - A tuple of (hue, saturation, value) values, each in the range [0.0, 1.0].
+    /// * `parts` - A slice of `TeePart` specifying which parts to apply the transformation to.
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// use tee_morphosis::tee::{Tee, parts::EyeType};
+    /// use tee_morphosis::tee::{Tee, parts::TeePart};
+    /// use tee_morphosis::tee:hsl::ddnet_color_to_hsl;
     ///
-    /// let tee = Tee::new(/* ... */)?;
-    /// let happy_eye = tee.get_eye(EyeType::Happy);
+    /// let mut tee = Tee::new(/* ... */)?;
+    ///
+    /// let hsl = ddnet_color_to_hsl(1900500);
+    /// tee.apply_hsl_to_parts(hsl, &[TeePart::Body]);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    #[instrument(level = "debug", skip(self), fields(eye_type = ?r#type))]
-    pub fn get_eye(
-        &self,
-        r#type: EyeType,
-    ) -> &RgbaImage {
-        let index = r#type.index();
-        match (&r#type, &self.eye[index]) {
-            (EyeType::Normal, EyeTypeData::Normal(img)) => img,
-            (EyeType::Angry, EyeTypeData::Angry(img)) => img,
-            (EyeType::Pain, EyeTypeData::Pain(img)) => img,
-            (EyeType::Happy, EyeTypeData::Happy(img)) => img,
-            (EyeType::Empty, EyeTypeData::Empty(img)) => img,
-            (EyeType::Surprise, EyeTypeData::Surprise(img)) => img,
-
-            // This is a safety check that should never be hit if the Tee is constructed correctly.
-            _ => unreachable!(
-                "Invariant violation: eye type at index {} does not match the requested type.",
-                index
-            ),
+    #[instrument(level = "debug", skip(self), fields(hsl = ?hsl, parts_count = parts.len()))]
+    pub fn apply_hsl_to_parts(
+        &mut self,
+        hsl: (f32, f32, f32),
+        parts: &[TeePart],
+    ) {
+        trace!("Applying HSL transformation to {} parts", parts.len());
+        for part in parts {
+            match part {
+                TeePart::Body => {
+                    img_hsl_transform(&mut self.body.value, hsl);
+                }
+                TeePart::BodyShadow => {
+                    img_hsl_transform(&mut self.body.shadow, hsl);
+                }
+                TeePart::Feet => {
+                    img_hsl_transform(&mut self.feet.value, hsl);
+                }
+                TeePart::FeetShadow => {
+                    img_hsl_transform(&mut self.feet.shadow, hsl);
+                }
+                TeePart::Hand => {
+                    img_hsl_transform(&mut self.hand.value, hsl);
+                }
+                TeePart::HandShadow => {
+                    img_hsl_transform(&mut self.hand.shadow, hsl);
+                }
+            }
         }
+        debug!("Successfully applied HSL transformation to specified parts");
+    }
+
+    /// Applies HSL color transformation to all parts of the Tee.
+    ///
+    /// # Arguments
+    ///
+    /// * `hls` - A tuple of (hue, saturation, value) values, each in the range [0.0, 1.0].
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use tee_morphosis::tee::Tee;
+    /// use tee_morphosis::tee:hsl::ddnet_color_to_hsl;
+    ///
+    /// let mut tee = Tee::new(/* ... */)?;
+    ///
+    /// let hsl = ddnet_color_to_hsl(1900500);
+    /// tee.apply_hsl_to_all(hsl);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[instrument(level = "debug", skip(self), fields(hls = ?hls))]
+    pub fn apply_hsl_to_all(
+        &mut self,
+        hls: HSL,
+    ) {
+        trace!("Applying HSL transformation to all parts");
+        self.apply_hsl_to_parts(
+            hls,
+            &[
+                TeePart::Body,
+                TeePart::BodyShadow,
+                TeePart::Feet,
+                TeePart::FeetShadow,
+                TeePart::Hand,
+                TeePart::HandShadow,
+            ],
+        );
+        debug!("Successfully applied HSL transformation to all parts");
     }
 
     /// Composites the Tee parts onto a base skin image to create a final character portrait.
@@ -370,100 +414,12 @@ impl Tee {
         Ok(Bytes::from(buf))
     }
 
-    /// Applies HSV color transformation to specific parts of the Tee.
-    ///
-    /// # Arguments
-    ///
-    /// * `hsv` - A tuple of (hue, saturation, value) values, each in the range [0.0, 1.0].
-    /// * `parts` - A slice of `TeePart` specifying which parts to apply the transformation to.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use tee_morphosis::tee::{Tee, parts::TeePart};
-    /// use tee_morphosis::tee:hsl::ddnet_color_to_hsl;
-    ///
-    /// let mut tee = Tee::new(/* ... */)?;
-    ///
-    /// let hsl = ddnet_color_to_hsl(1900500);
-    /// tee.apply_hsv_to_parts(hsl, &[TeePart::Body]);
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
-    #[instrument(level = "debug", skip(self), fields(hsl = ?hsl, parts_count = parts.len()))]
-    pub fn apply_hsv_to_parts(
-        &mut self,
-        hsl: (f32, f32, f32),
-        parts: &[TeePart],
-    ) {
-        trace!("Applying HSV transformation to {} parts", parts.len());
-        for part in parts {
-            match part {
-                TeePart::Body => {
-                    img_hsl_transform(&mut self.body.value, hsl);
-                }
-                TeePart::BodyShadow => {
-                    img_hsl_transform(&mut self.body.shadow, hsl);
-                }
-                TeePart::Feet => {
-                    img_hsl_transform(&mut self.feet.value, hsl);
-                }
-                TeePart::FeetShadow => {
-                    img_hsl_transform(&mut self.feet.shadow, hsl);
-                }
-                TeePart::Hand => {
-                    img_hsl_transform(&mut self.hand.value, hsl);
-                }
-                TeePart::HandShadow => {
-                    img_hsl_transform(&mut self.hand.shadow, hsl);
-                }
-            }
-        }
-        debug!("Successfully applied HSV transformation to specified parts");
-    }
-
-    /// Applies HSV color transformation to all parts of the Tee.
-    ///
-    /// # Arguments
-    ///
-    /// * `hsv` - A tuple of (hue, saturation, value) values, each in the range [0.0, 1.0].
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use tee_morphosis::tee::Tee;
-    /// use tee_morphosis::tee:hsl::ddnet_color_to_hsl;
-    ///
-    /// let mut tee = Tee::new(/* ... */)?;
-    ///
-    /// let hsl = ddnet_color_to_hsl(1900500);
-    /// tee.apply_hsv_to_all(hsl);
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
-    #[instrument(level = "debug", skip(self), fields(hsv = ?hsv))]
-    pub fn apply_hsv_to_all(
-        &mut self,
-        hsv: (f32, f32, f32),
-    ) {
-        trace!("Applying HSV transformation to all parts");
-        self.apply_hsv_to_parts(
-            hsv,
-            &[
-                TeePart::Body,
-                TeePart::BodyShadow,
-                TeePart::Feet,
-                TeePart::FeetShadow,
-                TeePart::Hand,
-                TeePart::HandShadow,
-            ],
-        );
-        debug!("Successfully applied HSV transformation to all parts");
-    }
-
-    /// Composites the Tee with default options (happy eyes, PNG format).
+    /// Composites the Tee with PNG format.
     ///
     /// # Arguments
     ///
     /// * `skin` - The base `Skin` to draw the Tee parts onto.
+    /// * `eye_type` - The type of eyes to use.
     ///
     /// # Returns
     ///
@@ -476,58 +432,61 @@ impl Tee {
     /// use tee_morphosis::tee::{Tee, skin::TEE_SKIN_LAYOUT};
     ///
     /// let tee = Tee::new(/* ... */)?;
-    /// let result = tee.compose_default(TEE_SKIN_LAYOUT)?;
+    /// let result = tee.compose_png(TEE_SKIN_LAYOUT, EyeType::Happy)?;
     /// std::fs::write("output.png", result)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[instrument(level = "info", skip(self, skin), fields(skin_container = ?skin.container))]
-    pub fn compose_default(
+    pub fn compose_png(
         &self,
         skin: Skin,
+        eye_type: EyeType,
     ) -> Result<Bytes> {
         trace!("Composing with default options (happy eyes, PNG format)");
-        self.compose(skin, EyeType::Happy, ImageFormat::Png)
+        self.compose(skin, eye_type, ImageFormat::Png)
     }
 
-    /// Composites the Tee with custom options.
+    /// Retrieves the image for a specific eye type.
     ///
     /// # Arguments
     ///
-    /// * `skin` - The base `Skin` to draw the Tee parts onto.
-    /// * `options` - A `ComposeOptions` struct specifying custom composition parameters.
+    /// * `type` - The `EyeType` to retrieve.
     ///
     /// # Returns
     ///
-    /// A `Result` which is `Ok(Bytes)` containing the final image data on success,
-    /// or `Err(TeeError)` on failure.
+    /// A reference to the `RgbaImage` corresponding to the requested eye type.
+    /// This function will panic if the internal state is inconsistent, which is
+    /// prevented by the construction logic in `Tee::new`.
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// use tee_morphosis::tee::{Tee, compose::ComposeOptions, parts::EyeType, skin::TEE_SKIN_LAYOUT};
-    /// use image::ImageFormat;
+    /// use tee_morphosis::tee::{Tee, parts::EyeType};
     ///
     /// let tee = Tee::new(/* ... */)?;
-    /// let options = ComposeOptions {
-    ///     eye_type: Some(EyeType::Surprise),
-    ///     format: Some(ImageFormat::Jpeg),
-    /// };
-    /// let result = tee.compose_with_options(TEE_SKIN_LAYOUT, options)?;
-    /// std::fs::write("output.jpg", result)?;
+    /// let happy_eye = tee.get_eye(EyeType::Happy);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    #[instrument(level = "info", skip(self, skin, options), fields(skin_container = ?skin.container, options = ?options))]
-    pub fn compose_with_options(
+    #[instrument(level = "debug", skip(self), fields(eye_type = ?r#type))]
+    pub fn get_eye(
         &self,
-        skin: Skin,
-        options: ComposeOptions,
-    ) -> Result<Bytes> {
-        trace!("Composing with custom options: {:?}", options);
-        self.compose(
-            skin,
-            options.eye_type.unwrap_or(EyeType::Happy),
-            options.format.unwrap_or(ImageFormat::Png),
-        )
+        r#type: EyeType,
+    ) -> &RgbaImage {
+        let index = r#type.index();
+        match (&r#type, &self.eye[index]) {
+            (EyeType::Normal, EyeTypeData::Normal(img)) => img,
+            (EyeType::Angry, EyeTypeData::Angry(img)) => img,
+            (EyeType::Pain, EyeTypeData::Pain(img)) => img,
+            (EyeType::Happy, EyeTypeData::Happy(img)) => img,
+            (EyeType::Empty, EyeTypeData::Empty(img)) => img,
+            (EyeType::Surprise, EyeTypeData::Surprise(img)) => img,
+
+            // This is a safety check that should never be hit if the Tee is constructed correctly.
+            _ => unreachable!(
+                "Invariant violation: eye type at index {} does not match the requested type.",
+                index
+            ),
+        }
     }
 
     /// Returns all parts of the Tee as a HashMap.
